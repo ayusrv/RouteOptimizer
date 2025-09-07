@@ -2,7 +2,6 @@ package com.routeoptimizer.app.optimization
 
 import com.routeoptimizer.app.data.*
 import com.routeoptimizer.app.network.RoadNetwork
-import com.routeoptimizer.app.algorithms.AStarPathfinder
 import kotlin.math.*
 import java.util.*
 
@@ -26,23 +25,31 @@ class RouteOptimizer(private val network: RoadNetwork) {
         while (priorityQueue.isNotEmpty()) {
             val current = priorityQueue.poll()
 
-            if (current.locationId in visited) continue
-            visited.add(current.locationId)
+            if (current != null) {
+                if (current.locationId in visited) continue
+            }
+            if (current != null) {
+                visited.add(current.locationId)
+            }
 
-            if (current.locationId == endId) break
+            if (current != null) {
+                if (current.locationId == endId) break
+            }
 
-            network.getNeighbors(current.locationId).forEach { edge ->
-                val cost = when (optimizeFor) {
-                    OptimizationType.DISTANCE -> edge.distance
-                    OptimizationType.TIME -> edge.time * edge.trafficMultiplier
-                }
+            if (current != null) {
+                network.getNeighbors(current.locationId).forEach { edge ->
+                    val cost = when (optimizeFor) {
+                        OptimizationType.DISTANCE -> edge.distance
+                        OptimizationType.TIME -> edge.time * edge.trafficMultiplier
+                    }
 
-                val newDistance = distances[current.locationId]!! + cost
+                    val newDistance = distances[current.locationId]!! + cost
 
-                if (newDistance < distances[edge.to]!!) {
-                    distances[edge.to] = newDistance
-                    previous[edge.to] = current.locationId
-                    priorityQueue.add(PriorityNode(edge.to, newDistance))
+                    if (newDistance < distances[edge.to]!!) {
+                        distances[edge.to] = newDistance
+                        previous[edge.to] = current.locationId
+                        priorityQueue.add(PriorityNode(edge.to, newDistance))
+                    }
                 }
             }
         }
