@@ -1,17 +1,20 @@
 package com.routeoptimizer.app.ui.viewmodel
 
+import android.content.Context
 import androidx.compose.runtime.*
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.routeoptimizer.app.data.*
 import com.routeoptimizer.app.network.NetworkClient
 import com.routeoptimizer.app.optimization.RealTimeRouteOptimizer
+import com.routeoptimizer.app.services.LocationService
 import kotlinx.coroutines.*
 import kotlin.math.pow
 
-class RouteViewModel : ViewModel() {
+class RouteViewModel(private val context: Context) : ViewModel() {
     private val realTimeOptimizer = RealTimeRouteOptimizer()
     private val geocodingService = NetworkClient.geocodingService
+    private val locationService = LocationService(context)
 
     private val _destinations = mutableStateListOf<RouteLocation>()
     val destinations: List<RouteLocation> = _destinations
@@ -37,6 +40,12 @@ class RouteViewModel : ViewModel() {
     private val _errorMessage = mutableStateOf<String?>(null)
     val errorMessage = _errorMessage
 
+    private val _isGettingLocation = mutableStateOf(false)
+    val isGettingLocation = _isGettingLocation
+
+    private val _showMap = mutableStateOf(false)
+    val showMap = _showMap
+
     // Sample locations for fallback
     private val sampleLocations = listOf(
         RouteLocation(name = "Downtown", latitude = 40.7128, longitude = -74.0060),
@@ -49,9 +58,44 @@ class RouteViewModel : ViewModel() {
         RouteLocation(name = "Park", latitude = 40.7794, longitude = -73.9632)
     )
 
+    // Initialize search results with sample locations
+    init {
+        _searchResults.value = sampleLocations
+    }
+
     fun setStartLocation(location: RouteLocation) {
         _startLocation.value = location
         clearError()
+    }
+
+    fun getCurrentLocation() {
+        if (!locationService.hasLocationPermission()) {
+            _errorMessage.value = "Location permission required to get current location"
+            return
+        }
+
+        if (!locationService.isLocationEnabled()) {
+            _errorMessage.value = "Please enable location services"
+            return
+        }
+
+        _isGettingLocation.value = true
+        _errorMessage.value = null
+
+        viewModelScope.launch {
+            try {
+                val currentLocation = locationService.getCurrentLocation()
+                if (currentLocation != null) {
+                    _startLocation.value = currentLocation
+                } else {
+                    _errorMessage.value = "Unable to get current location. Please try again."
+                }
+            } catch (e: Exception) {
+                _errorMessage.value = "Failed to get current location: ${e.message}"
+            } finally {
+                _isGettingLocation.value = false
+            }
+        }
     }
 
     fun addDestination(location: RouteLocation) {
@@ -71,6 +115,12 @@ class RouteViewModel : ViewModel() {
         _optimizationType.value = type
     }
 
+    // Fixed: Added missing clearError function
+    fun clearError() {
+        _errorMessage.value = null
+    }
+
+    // Fixed: Added missing calculateOptimalRoute function
     fun calculateOptimalRoute() {
         val start = _startLocation.value ?: run {
             _errorMessage.value = "Please select a start location"
@@ -93,6 +143,10 @@ class RouteViewModel : ViewModel() {
                     _optimizationType.value
                 )
                 _optimizedRoute.value = route
+
+                // Auto-show map after successful calculation
+                _showMap.value = true
+
             } catch (e: Exception) {
                 _errorMessage.value = "Failed to calculate route: ${e.message}"
                 // Fallback to basic calculation if network fails
@@ -138,15 +192,22 @@ class RouteViewModel : ViewModel() {
         }
     }
 
-    fun clearRoute() {
-        _optimizedRoute.value = null
+    fun showMapView() {
+        _showMap.value = true
     }
 
-    fun clearError() {
-        _errorMessage.value = null
+    fun hideMapView() {
+        _showMap.value = false
+    }
+
+    fun clearRoute() {
+        _optimizedRoute.value = null
+        _showMap.value = false
     }
 
     fun getAllAvailableLocations(): List<RouteLocation> = sampleLocations
+
+    fun hasLocationPermission(): Boolean = locationService.hasLocationPermission()
 
     private suspend fun calculateFallbackRoute(
         start: RouteLocation,

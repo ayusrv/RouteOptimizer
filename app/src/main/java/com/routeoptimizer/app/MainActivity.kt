@@ -10,7 +10,6 @@ import androidx.compose.ui.Modifier
 import com.routeoptimizer.app.ui.RouteOptimizerApp
 import com.routeoptimizer.app.ui.RouteOptimizerTheme
 
-
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

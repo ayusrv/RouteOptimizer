@@ -90,6 +90,16 @@ dependencies {
     // JSON parsing
     implementation("com.google.code.gson:gson:2.10.1")
 
+    // Map integration
+    implementation("com.google.maps.android:maps-compose:2.15.0")
+    implementation("com.google.android.gms:play-services-maps:18.2.0")
+
+    // OSM Map alternative (if you prefer open source)
+    implementation("org.osmdroid:osmdroid-android:6.1.14")
+
+    //Material
+    implementation("androidx.compose.material:material-icons-extended:1.7.0")
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

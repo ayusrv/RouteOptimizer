@@ -4,34 +4,46 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.google.accompanist.permissions.ExperimentalPermissionsApi
+import com.google.accompanist.permissions.rememberMultiplePermissionsState
 import com.routeoptimizer.app.data.OptimizationType
 import com.routeoptimizer.app.ui.viewmodel.RouteViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
 fun RouteOptimizerApp() {
-    val viewModel: RouteViewModel = viewModel()
+    val context = LocalContext.current
+    val viewModel: RouteViewModel = viewModel { RouteViewModel(context) }
+
     val startLocation by viewModel.startLocation
     val destinations = viewModel.destinations
     val optimizedRoute by viewModel.optimizedRoute
     val optimizationType by viewModel.optimizationType
     val isCalculating by viewModel.isCalculating
     val errorMessage by viewModel.errorMessage
+    val isGettingLocation by viewModel.isGettingLocation
+    val showMap by viewModel.showMap
 
     var showLocationPicker by remember { mutableStateOf(false) }
     var pickingFor by remember { mutableStateOf("start") }
+
+    // Location permissions
+    val locationPermissionsState = rememberMultiplePermissionsState(
+        listOf(
+            android.Manifest.permission.ACCESS_FINE_LOCATION,
+            android.Manifest.permission.ACCESS_COARSE_LOCATION,
+        )
+    )
 
     Column(
         modifier = Modifier
@@ -71,6 +83,10 @@ fun RouteOptimizerApp() {
                         color = MaterialTheme.colorScheme.onErrorContainer,
                         style = MaterialTheme.typography.bodyMedium
                     )
+                    Spacer(modifier = Modifier.weight(1f))
+                    TextButton(onClick = { viewModel.clearError() }) {
+                        Text("Dismiss")
+                    }
                 }
             }
         }
@@ -82,11 +98,46 @@ fun RouteOptimizerApp() {
             Column(
                 modifier = Modifier.padding(16.dp)
             ) {
-                Text(
-                    text = "Start Location",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Start Location",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+
+                    // Current Location Button
+                    OutlinedButton(
+                        onClick = {
+                            if (locationPermissionsState.allPermissionsGranted) {
+                                viewModel.getCurrentLocation()
+                            } else {
+                                locationPermissionsState.launchMultiplePermissionRequest()
+                            }
+                        },
+                        enabled = !isGettingLocation
+                    ) {
+                        if (isGettingLocation) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Getting...")
+                        } else {
+                            Icon(
+                                Icons.Default.MyLocation,
+                                contentDescription = "Current Location",
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Current")
+                        }
+                    }
+                }
 
                 Button(
                     onClick = {
@@ -95,6 +146,8 @@ fun RouteOptimizerApp() {
                     },
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                 ) {
+                    Icon(Icons.Default.LocationOn, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(startLocation?.name ?: "Select Start Location")
                 }
 
@@ -204,22 +257,42 @@ fun RouteOptimizerApp() {
                 ) {
                     FilterChip(
                         onClick = { viewModel.setOptimizationType(OptimizationType.DISTANCE) },
-                        label = { Text("Shortest Distance") },
+                        label = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.Straighten,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Shortest Distance")
+                            }
+                        },
                         selected = optimizationType == OptimizationType.DISTANCE,
                         modifier = Modifier.padding(end = 8.dp)
                     )
 
                     FilterChip(
                         onClick = { viewModel.setOptimizationType(OptimizationType.TIME) },
-                        label = { Text("Fastest Time") },
+                        label = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.Schedule,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Fastest Time")
+                            }
+                        },
                         selected = optimizationType == OptimizationType.TIME
                     )
                 }
 
                 Text(
                     text = when (optimizationType) {
-                        OptimizationType.DISTANCE -> "Minimize total driving distance"
-                        OptimizationType.TIME -> "Minimize total travel time (considers traffic)"
+                        OptimizationType.DISTANCE -> "Minimize total driving distance using real road networks"
+                        OptimizationType.TIME -> "Minimize total travel time considering traffic conditions"
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -228,27 +301,44 @@ fun RouteOptimizerApp() {
             }
         }
 
-        // Calculate Button
-        Button(
-            onClick = {
-                viewModel.clearError()
-                viewModel.calculateOptimalRoute()
-            },
+        // Action Buttons
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            enabled = startLocation != null && destinations.isNotEmpty() && !isCalculating
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            if (isCalculating) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(16.dp),
-                    strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.onPrimary
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-            } else {
-                Icon(Icons.Default.LocationOn, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
+            // Calculate Button
+            Button(
+                onClick = {
+                    viewModel.clearError()
+                    viewModel.calculateOptimalRoute()
+                },
+                modifier = Modifier.weight(1f),
+                enabled = startLocation != null && destinations.isNotEmpty() && !isCalculating
+            ) {
+                if (isCalculating) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                } else {
+                    Icon(Icons.Default.Route, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                Text(if (isCalculating) "Calculating..." else "Calculate Route")
             }
-            Text(if (isCalculating) "Calculating Route..." else "Calculate Optimal Route")
+
+            // Show Map Button
+            optimizedRoute?.let {
+                OutlinedButton(
+                    onClick = { viewModel.showMapView() }
+                ) {
+                    Icon(Icons.Default.Map, contentDescription = null)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Map")
+                }
+            }
         }
 
         // Results Section
@@ -264,24 +354,56 @@ fun RouteOptimizerApp() {
                 Column(
                     modifier = Modifier.padding(16.dp)
                 ) {
-                    Text(
-                        text = "Optimized Route Results",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Route Results",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+
+                        Row {
+                            TextButton(
+                                onClick = { viewModel.showMapView() }
+                            ) {
+                                Icon(
+                                    Icons.Default.Map,
+                                    contentDescription = "Show Map",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("View Map")
+                            }
+
+                            TextButton(
+                                onClick = { viewModel.clearRoute() }
+                            ) {
+                                Icon(
+                                    Icons.Default.Clear,
+                                    contentDescription = "Clear Route",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Clear")
+                            }
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.SpaceEvenly
                     ) {
-                        Column {
-                            Text(
-                                text = "Distance",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                Icons.Default.Straighten,
+                                contentDescription = "Distance",
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                             Text(
                                 text = "${String.format("%.1f", route.totalDistance)} km",
@@ -289,13 +411,18 @@ fun RouteOptimizerApp() {
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
-                        }
-
-                        Column {
                             Text(
-                                text = "Time",
+                                text = "Distance",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                Icons.Default.Schedule,
+                                contentDescription = "Time",
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                             Text(
                                 text = "${String.format("%.0f", route.totalTime * 60)} min",
@@ -303,18 +430,28 @@ fun RouteOptimizerApp() {
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
-                        }
-
-                        Column {
                             Text(
-                                text = "Stops",
+                                text = "Time",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                Icons.Default.Flag,
+                                contentDescription = "Stops",
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                             Text(
                                 text = "${route.locations.size}",
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Text(
+                                text = "Stops",
+                                style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                         }
@@ -324,7 +461,7 @@ fun RouteOptimizerApp() {
                         Spacer(modifier = Modifier.height(12.dp))
 
                         Text(
-                            text = "Route Steps:",
+                            text = "Turn-by-Turn Directions:",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -334,14 +471,29 @@ fun RouteOptimizerApp() {
                             modifier = Modifier.heightIn(max = 200.dp).padding(top = 4.dp)
                         ) {
                             itemsIndexed(route.steps) { index, step ->
-                                Text(
-                                    text = "${index + 1}. ${step.instruction}\n" +
-                                            "   ${String.format("%.1f", step.distance)} km, " +
-                                            "${String.format("%.0f", step.time * 60)} min",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    modifier = Modifier.padding(vertical = 2.dp)
-                                )
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 2.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f)
+                                    )
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(12.dp)
+                                    ) {
+                                        Text(
+                                            text = "${index + 1}. ${step.instruction}",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        Text(
+                                            text = "${String.format("%.1f", step.distance)} km • ${String.format("%.0f", step.time * 60)} min",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -364,5 +516,22 @@ fun RouteOptimizerApp() {
             onDismiss = { showLocationPicker = false },
             viewModel = viewModel
         )
+    }
+
+    // Map Dialog
+    if (showMap && optimizedRoute != null) {
+        RouteMapDialog(
+            route = optimizedRoute!!,
+            onDismiss = { viewModel.hideMapView() }
+        )
+    }
+
+    // Permission handling
+    if (!locationPermissionsState.allPermissionsGranted) {
+        LaunchedEffect(locationPermissionsState.shouldShowRationale) {
+            if (locationPermissionsState.shouldShowRationale) {
+                // Show rationale if needed
+            }
+        }
     }
 }
